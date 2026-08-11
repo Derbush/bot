@@ -4,7 +4,6 @@ on:
   schedule:
     # Runs at :17, :37, :57 every hour
     - cron: '17,37,57 * * * *'
-      timezone: 'America/Toronto'
 
   # Optional: keep manual Run workflow button
   workflow_dispatch:
