@@ -12,7 +12,7 @@ jobs:
     timeout-minutes: 120
     runs-on: ubuntu-latest
     outputs:
-      test_passed: ${{ steps.search.outcome }}
+      test_passed: ${{ steps.search.outputs.outcome }}
       dates_found: ${{ steps.capture_dates.outputs.dates }}
       last_month: ${{ steps.capture_dates.outputs.month }}
     
@@ -22,6 +22,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: lts/*
+      
+      - name: Cache Playwright browsers
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: playwright-${{ runner.os }}-
       
       - name: Install dependencies
         run: npm ci
@@ -35,7 +42,7 @@ jobs:
           npx playwright test --grep "Поиск мест 2026" 2>&1 | tee test-output.txt
           TEST_RESULT=$?
           echo "outcome=$([[ $TEST_RESULT -eq 0 ]] && echo 'success' || echo 'failure')" >> $GITHUB_OUTPUT
-          exit $TEST_RESULT
+        continue-on-error: true
         env:
           VISAWEBSITE: ${{ secrets.VISAWEBSITE }}
           VISALOGIN: ${{ secrets.VISALOGIN }}
@@ -73,6 +80,13 @@ jobs:
         with:
           node-version: lts/*
       
+      - name: Cache Playwright browsers
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: playwright-${{ runner.os }}-
+      
       - name: Install dependencies
         run: npm ci
       
@@ -85,7 +99,7 @@ jobs:
           npx playwright test --grep "Запись" 2>&1 | tee booking-output.txt
           TEST_RESULT=$?
           echo "outcome=$([[ $TEST_RESULT -eq 0 ]] && echo 'success' || echo 'failure')" >> $GITHUB_OUTPUT
-          exit $TEST_RESULT
+        continue-on-error: true
         env:
           VISAWEBSITE: ${{ secrets.VISAWEBSITE }}
           VISALOGIN: ${{ secrets.VISALOGIN }}
