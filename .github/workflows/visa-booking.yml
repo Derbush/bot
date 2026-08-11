@@ -71,6 +71,10 @@ jobs:
         id: booking
         continue-on-error: true
         shell: bash
+        env:
+          VISAWEBSITE: ${{ secrets.VISAWEBSITE }}
+          VISALOGIN: ${{ secrets.VISALOGIN }}
+          VISAPASSWORD: ${{ secrets.VISAPASSWORD }}
         run: |
 
           echo "============================================"
@@ -147,6 +151,10 @@ jobs:
 
       # ==========================================================
       # CREATE ISSUE WITH BOOKING RESULT
+      #
+      # Assigned to the repo owner so GitHub emails a
+      # notification automatically (same mechanism as the
+      # search workflow) - no SMTP secrets needed.
       # ==========================================================
       - name: Create booking result issue
         if: always()
@@ -176,6 +184,7 @@ jobs:
           gh issue create \
             --repo "${{ github.repository }}" \
             --title "$TITLE" \
+            --assignee "${{ github.repository_owner }}" \
             --body "$(cat <<EOF
 
           ============================================

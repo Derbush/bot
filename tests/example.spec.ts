@@ -1,23 +1,5 @@
 import { test, expect } from "@playwright/test";
 
-test("has title", async ({ page }) => {
-  await page.goto("https://playwright.dev/");
-
-  // Expect a title "to contain" a substring.
-  await expect(page).toHaveTitle(/Playwright/);
-});
-
-test("get started link", async ({ page }) => {
-  await page.goto("https://playwright.dev/");
-
-  // Click the get started link.
-  await page.getByRole("link", { name: "Get started" }).click();
-
-  // Expects page to have a heading with the name of Installation.
-  await expect(
-    page.getByRole("heading", { name: "Installation" }),
-  ).toBeVisible();
-});
 
 test("Поиск мест 2026", async ({ page }) => {
   // use command in terminal  "npx playwright test C:\Users\user002107\Desktop\VS Code Project\afina-playwright-ts\tests\practice.spec.ts"
@@ -103,7 +85,7 @@ test("Поиск мест 2026", async ({ page }) => {
     console.log(`Navigating: ${month?.trim()} ${year?.trim()}`);
 
     // Stop at June 2028
-    if (month?.trim() === "August" && year?.trim() === "2028") {
+    if (month?.trim() === "August" && year?.trim() === "2027") {
       break;
     }
 
