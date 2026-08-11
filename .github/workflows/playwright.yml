@@ -296,4 +296,3 @@ jobs:
           echo "Intentionally failing this workflow so GitHub sends a failed-workflow notification."
 
           exit 1
-```
