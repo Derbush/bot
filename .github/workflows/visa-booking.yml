@@ -1,0 +1,243 @@
+name: Visa Appointment Booking - Every 20 Minutes
+
+on:
+  schedule:
+    # Runs at :17, :37, :57 every hour
+    - cron: '17,37,57 * * * *'
+      timezone: 'America/Toronto'
+
+  # Optional: keep manual Run workflow button
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  book_appointment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+
+      # ==========================================================
+      # CHECKOUT
+      # ==========================================================
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+
+      # ==========================================================
+      # NODE
+      # ==========================================================
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+
+      # ==========================================================
+      # PLAYWRIGHT CACHE
+      # ==========================================================
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+
+
+      # ==========================================================
+      # INSTALL DEPENDENCIES
+      # ==========================================================
+      - name: Install dependencies
+        run: npm ci
+
+
+      # ==========================================================
+      # INSTALL PLAYWRIGHT
+      # ==========================================================
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps
+
+
+      # ==========================================================
+      # RUN BOOKING TEST
+      #
+      # Exactly ONE execution.
+      # No Playwright retries.
+      # ==========================================================
+      - name: Run "Запись" test
+        id: booking
+        continue-on-error: true
+        shell: bash
+        run: |
+
+          echo "============================================"
+          echo "VISA APPOINTMENT BOOKING"
+          echo "============================================"
+
+          set +e
+
+          npx playwright test \
+            --grep "Запись" \
+            --retries=0 \
+            2>&1 | tee booking-output.txt
+
+          TEST_RESULT=${PIPESTATUS[0]}
+
+          echo ""
+          echo "Playwright booking exit code: $TEST_RESULT"
+
+          if [ "$TEST_RESULT" -eq 0 ]; then
+
+            echo "result=success" >> "$GITHUB_OUTPUT"
+
+            echo ""
+            echo "============================================"
+            echo "🚨 APPOINTMENT BOOKED"
+            echo "============================================"
+
+          else
+
+            echo "result=failure" >> "$GITHUB_OUTPUT"
+
+            echo ""
+            echo "============================================"
+            echo "❌ BOOKING TEST FAILED"
+            echo "============================================"
+
+          fi
+
+
+      # ==========================================================
+      # PRINT COMPLETE BOOKING OUTPUT
+      # ==========================================================
+      - name: Display complete booking output
+        if: always()
+        shell: bash
+        run: |
+
+          echo "============================================"
+          echo "COMPLETE BOOKING OUTPUT"
+          echo "============================================"
+
+          if [ -f booking-output.txt ]; then
+            cat booking-output.txt
+          fi
+
+
+      # ==========================================================
+      # UPLOAD BOOKING REPORT
+      #
+      # This report belongs ONLY to this booking run.
+      # ==========================================================
+      - name: Upload booking test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: booking-test-report-${{ github.run_number }}
+          path: |
+            playwright-report/
+            booking-output.txt
+            test-results/
+          if-no-files-found: warn
+          retention-days: 7
+
+
+      # ==========================================================
+      # CREATE ISSUE WITH BOOKING RESULT
+      # ==========================================================
+      - name: Create booking result issue
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+
+          if [ "${{ steps.booking.outputs.result }}" = "success" ]; then
+
+            TITLE="🚨 APPOINTMENT BOOKED - Запись PASSED"
+
+            STATUS="✅ PASSED"
+
+            MESSAGE="The appointment booking test completed successfully."
+
+          else
+
+            TITLE="❌ APPOINTMENT BOOKING FAILED - Запись"
+
+            STATUS="❌ FAILED"
+
+            MESSAGE="The appointment booking test failed."
+
+          fi
+
+          gh issue create \
+            --repo "${{ github.repository }}" \
+            --title "$TITLE" \
+            --body "$(cat <<EOF
+
+          ============================================
+          APPOINTMENT BOOKING RESULT
+          ============================================
+
+          Test:
+          "Запись"
+
+          Status:
+          $STATUS
+
+          Result:
+          $MESSAGE
+
+          ============================================
+          GITHUB ACTION RUN
+          ============================================
+
+          ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          ============================================
+          REPORT
+          ============================================
+
+          Artifact:
+          booking-test-report-${{ github.run_number }}
+
+          Download the artifact from this GitHub Actions run
+          to view the complete Playwright report and output.
+
+          ============================================
+          RUN INFORMATION
+          ============================================
+
+          Run Number:
+          ${{ github.run_number }}
+
+          Run ID:
+          ${{ github.run_id }}
+
+          EOF
+          )"
+
+
+      # ==========================================================
+      # ACTUAL BUILD FAILURE
+      #
+      # Unlike the search workflow, a failed booking test
+      # DOES fail this workflow.
+      # ==========================================================
+      - name: Fail build if booking failed
+        if: steps.booking.outputs.result == 'failure'
+        shell: bash
+        run: |
+
+          echo "============================================"
+          echo "❌ BOOKING TEST FAILED"
+          echo "============================================"
+
+          echo "The appointment booking test failed."
+          echo "This workflow will be marked as FAILED."
+
+          exit 1

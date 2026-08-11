@@ -1,0 +1,266 @@
+name: Visa Date Search - Every 20 Minutes
+
+on:
+  schedule:
+    # Runs at :07, :27, :47 every hour
+    - cron: '7,27,47 * * * *'
+      timezone: 'America/Toronto'
+
+  # Optional: keep manual Run workflow button
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  search_dates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+
+      # ==========================================================
+      # CHECKOUT
+      # ==========================================================
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+
+      # ==========================================================
+      # NODE
+      # ==========================================================
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+
+      # ==========================================================
+      # PLAYWRIGHT CACHE
+      # ==========================================================
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+
+
+      # ==========================================================
+      # INSTALL DEPENDENCIES
+      # ==========================================================
+      - name: Install dependencies
+        run: npm ci
+
+
+      # ==========================================================
+      # INSTALL PLAYWRIGHT
+      # ==========================================================
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps
+
+
+      # ==========================================================
+      # RUN SEARCH TEST
+      #
+      # Exactly ONE execution.
+      # No Playwright retries.
+      # ==========================================================
+      - name: Run "Поиск мест 2026" test
+        id: search
+        continue-on-error: true
+        shell: bash
+        run: |
+
+          echo "============================================"
+          echo "VISA DATE SEARCH"
+          echo "============================================"
+
+          set +e
+
+          npx playwright test \
+            --grep "Поиск мест 2026" \
+            --retries=0 \
+            2>&1 | tee test-output.txt
+
+          TEST_RESULT=${PIPESTATUS[0]}
+
+          echo ""
+          echo "Playwright exit code: $TEST_RESULT"
+
+          if [ "$TEST_RESULT" -eq 0 ]; then
+            echo "result=success" >> "$GITHUB_OUTPUT"
+
+            echo ""
+            echo "============================================"
+            echo "✅ SEARCH TEST PASSED"
+            echo "============================================"
+
+          else
+            echo "result=failure" >> "$GITHUB_OUTPUT"
+
+            echo ""
+            echo "============================================"
+            echo "ℹ️ SEARCH TEST FAILED"
+            echo "============================================"
+
+            echo "No dates were found or the search assertion failed."
+          fi
+
+
+      # ==========================================================
+      # CAPTURE LAST MONTH
+      # ==========================================================
+      - name: Capture dates and month
+        id: capture_dates
+        if: always()
+        shell: bash
+        run: |
+
+          if [ -f test-output.txt ]; then
+
+            MONTH=$(grep "Navigating:" test-output.txt | tail -1 || true)
+
+            if [ -z "$MONTH" ]; then
+              MONTH="unknown"
+            fi
+
+          else
+            MONTH="unknown"
+          fi
+
+          echo "month=$MONTH" >> "$GITHUB_OUTPUT"
+
+          echo ""
+          echo "Last navigation:"
+          echo "$MONTH"
+
+
+      # ==========================================================
+      # PRINT COMPLETE OUTPUT
+      # ==========================================================
+      - name: Display complete search output
+        if: always()
+        shell: bash
+        run: |
+
+          echo "============================================"
+          echo "COMPLETE SEARCH OUTPUT"
+          echo "============================================"
+
+          if [ -f test-output.txt ]; then
+            cat test-output.txt
+          fi
+
+
+      # ==========================================================
+      # UPLOAD SEARCH REPORT
+      #
+      # This report belongs ONLY to this search run.
+      # ==========================================================
+      - name: Upload search test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: search-test-report-${{ github.run_number }}
+          path: |
+            playwright-report/
+            test-output.txt
+            test-results/
+          if-no-files-found: warn
+          retention-days: 7
+
+
+      # ==========================================================
+      # CREATE ISSUE WITH RESULT
+      # ==========================================================
+      - name: Create search result issue
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+
+          if [ "${{ steps.search.outputs.result }}" = "success" ]; then
+
+            TITLE="🚨 VISA DATES AVAILABLE - Поиск мест 2026"
+
+            STATUS="✅ PASSED"
+
+            MESSAGE="Visa dates were found."
+
+          else
+
+            TITLE="ℹ️ NO VISA DATES - Поиск мест 2026"
+
+            STATUS="ℹ️ NO DATES FOUND"
+
+            MESSAGE="The search test did not find available dates."
+
+          fi
+
+          gh issue create \
+            --repo "${{ github.repository }}" \
+            --title "$TITLE" \
+            --body "$(cat <<EOF
+
+          ============================================
+          VISA DATE SEARCH RESULT
+          ============================================
+
+          Test:
+          "Поиск мест 2026"
+
+          Status:
+          $STATUS
+
+          Result:
+          $MESSAGE
+
+          Last Month Checked:
+          ${{ steps.capture_dates.outputs.month }}
+
+          ============================================
+          GITHUB ACTION RUN
+          ============================================
+
+          ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          ============================================
+          REPORT
+          ============================================
+
+          Artifact:
+          search-test-report-${{ github.run_number }}
+
+          Download the artifact from this GitHub Actions run
+          to view the complete Playwright report and output.
+
+          ============================================
+          RUN INFORMATION
+          ============================================
+
+          Run Number:
+          ${{ github.run_number }}
+
+          Run ID:
+          ${{ github.run_id }}
+
+          EOF
+          )"
+
+
+      # ==========================================================
+      # SEARCH FAILURE DOES NOT FAIL THE BUILD
+      #
+      # This preserves your previous behavior:
+      # no dates = normal result, not CI failure.
+      # ==========================================================
+      - name: Finish search run
+        shell: bash
+        run: |
+          echo "Search workflow completed."
+          echo "Result: ${{ steps.search.outputs.result }}"
+          exit 0
