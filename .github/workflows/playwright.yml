@@ -1,4 +1,3 @@
-```yaml
 name: Visa Appointment Bot - Every 20 Minutes
 
 on:
@@ -582,4 +581,3 @@ jobs:
 
           EOF
           )"
-```
