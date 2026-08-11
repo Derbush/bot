@@ -103,7 +103,7 @@ test("Поиск мест 2026", async ({ page }) => {
     console.log(`Navigating: ${month?.trim()} ${year?.trim()}`);
 
     // Stop at June 2028
-    if (month?.trim() === "December" && year?.trim() === "2026") {
+    if (month?.trim() === "August" && year?.trim() === "2028") {
       break;
     }
 
