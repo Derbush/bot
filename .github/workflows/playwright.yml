@@ -1,3 +1,4 @@
+
 name: Visa Appointment Bot - Every 20 Minutes
  
 on:
@@ -7,63 +8,70 @@ on:
   # Allow manual trigger
   workflow_dispatch:
  
+permissions:
+  contents: read
+  issues: write
+ 
 jobs:
   search_dates:
     timeout-minutes: 120
     runs-on: ubuntu-latest
     outputs:
       test_passed: ${{ steps.search.outputs.outcome }}
-      dates_found: ${{ steps.capture_dates.outputs.dates }}
       last_month: ${{ steps.capture_dates.outputs.month }}
-    
+ 
     steps:
       - uses: actions/checkout@v4
-      
+ 
       - uses: actions/setup-node@v4
         with:
           node-version: lts/*
-      
+ 
       - name: Cache Playwright browsers
         uses: actions/cache@v3
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
           restore-keys: playwright-${{ runner.os }}-
-      
+ 
       - name: Install dependencies
         run: npm ci
-      
+ 
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps
-      
+ 
       - name: Run "Поиск мест 2026" test
         id: search
+        continue-on-error: true
         run: |
           npx playwright test --grep "Поиск мест 2026" 2>&1 | tee test-output.txt
           TEST_RESULT=$?
           echo "outcome=$([[ $TEST_RESULT -eq 0 ]] && echo 'success' || echo 'failure')" >> $GITHUB_OUTPUT
-        continue-on-error: true
+          exit $TEST_RESULT
         env:
           VISAWEBSITE: ${{ secrets.VISAWEBSITE }}
           VISALOGIN: ${{ secrets.VISALOGIN }}
           VISAPASSWORD: ${{ secrets.VISAPASSWORD }}
-      
+ 
       - name: Capture dates and month from output
         id: capture_dates
-        if: steps.search.outcome == 'success'
+        if: always()
         run: |
-          # Extract last month checked (simplified for reliability)
-          MONTH=$(grep "Navigating:" test-output.txt | tail -1 || echo "December 2026")
+          MONTH=$(grep "Navigating:" test-output.txt | tail -1 || echo "unknown")
           echo "month=$MONTH" >> $GITHUB_OUTPUT
-          echo "dates=See GitHub run for full list" >> $GITHUB_OUTPUT
-        continue-on-error: true
-      
+ 
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
           name: search-test-report
           path: playwright-report/
           retention-days: 7
+ 
+      - name: Fail job if test failed
+        if: steps.search.outputs.outcome == 'failure'
+        run: |
+          echo "Search test failed - marking job as failed."
+          exit 1
  
   book_appointment:
     timeout-minutes: 120
@@ -72,39 +80,40 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       booking_result: ${{ steps.booking.outputs.outcome }}
-    
+ 
     steps:
       - uses: actions/checkout@v4
-      
+ 
       - uses: actions/setup-node@v4
         with:
           node-version: lts/*
-      
+ 
       - name: Cache Playwright browsers
         uses: actions/cache@v3
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
           restore-keys: playwright-${{ runner.os }}-
-      
+ 
       - name: Install dependencies
         run: npm ci
-      
+ 
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps
-      
+ 
       - name: Run "Запись" test
         id: booking
+        continue-on-error: true
         run: |
           npx playwright test --grep "Запись" 2>&1 | tee booking-output.txt
           TEST_RESULT=$?
           echo "outcome=$([[ $TEST_RESULT -eq 0 ]] && echo 'success' || echo 'failure')" >> $GITHUB_OUTPUT
-        continue-on-error: true
+          exit $TEST_RESULT
         env:
           VISAWEBSITE: ${{ secrets.VISAWEBSITE }}
           VISALOGIN: ${{ secrets.VISALOGIN }}
           VISAPASSWORD: ${{ secrets.VISAPASSWORD }}
-      
+ 
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
@@ -112,80 +121,88 @@ jobs:
           path: playwright-report/
           retention-days: 7
  
-  send_search_email:
+      - name: Fail job if booking failed
+        if: steps.booking.outputs.outcome == 'failure'
+        run: |
+          echo "Booking test failed - marking job as failed."
+          exit 1
+ 
+  notify_dates_found:
     runs-on: ubuntu-latest
     needs: search_dates
     if: needs.search_dates.outputs.test_passed == 'success'
-    
-    steps:
-      - name: Send Email - Dates Found (Поиск мест 2026)
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          username: ${{ secrets.EMAIL_USERNAME }}
-          password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: "✅ VISA DATES AVAILABLE! - Test Passed"
-          to: ${{ secrets.EMAIL_TO }}
-          from: "Visa Appointment Bot"
-          body: |
-            ✅ SUCCESS - "Поиск мест 2026" Test Passed!
-            
-            ============================================
-            AVAILABLE DATES FOUND
-            ============================================
-            
-            Test Name: "Поиск мест 2026"
-            Status: ✅ PASSED
-            
-            Last Month Checked:
-            ${{ needs.search_dates.outputs.last_month }}
-            
-            📊 VIEW FULL DETAILS:
-            GitHub Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-            
-            ⬇️ HOW TO VIEW DATES:
-            1. Click the GitHub Run link above
-            2. Click on "search-test-report" artifact
-            3. Download the zip file
-            4. Extract and open index.html in your browser
-            5. Expand the test steps to see all printed dates
-            
-            🤖 Next: Booking test "Запись" is now running...
-            You will receive another email when booking test completes.
+    permissions:
+      issues: write
  
-  send_booking_email:
+    steps:
+      - name: Create GitHub Issue - Dates Found
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --repo "${{ github.repository }}" \
+            --title "✅ VISA DATES AVAILABLE! - Test Passed" \
+            --body "$(cat <<'EOF'
+          ✅ SUCCESS - "Поиск мест 2026" Test Passed!
+ 
+          ============================================
+          AVAILABLE DATES FOUND
+          ============================================
+ 
+          Test Name: "Поиск мест 2026"
+          Status: ✅ PASSED
+ 
+          Last Month Checked:
+          ${{ needs.search_dates.outputs.last_month }}
+ 
+          📊 VIEW FULL DETAILS:
+          GitHub Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+ 
+          ⬇️ HOW TO VIEW DATES:
+          1. Click the GitHub Run link above
+          2. Click on "search-test-report" artifact
+          3. Download the zip file
+          4. Extract and open index.html in your browser
+          5. Expand the test steps to see all printed dates
+ 
+          🤖 Next: Booking test "Запись" is now running...
+          You will get another issue/notification when the booking test completes.
+          EOF
+          )"
+ 
+  notify_booking_success:
     runs-on: ubuntu-latest
     needs: [search_dates, book_appointment]
     if: needs.book_appointment.outputs.booking_result == 'success'
-    
+    permissions:
+      issues: write
+ 
     steps:
-      - name: Send Email - Booking Success (Запись)
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          username: ${{ secrets.EMAIL_USERNAME }}
-          password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: "✅ APPOINTMENT BOOKED! - Запись Test Passed"
-          to: ${{ secrets.EMAIL_TO }}
-          from: "Visa Appointment Bot"
-          body: |
-            ✅ SUCCESS - "Запись" Test Passed!
-            
-            ============================================
-            APPOINTMENT SUCCESSFULLY BOOKED
-            ============================================
-            
-            Test Name: "Запись"
-            Status: ✅ PASSED
-            
-            📊 VIEW FULL DETAILS:
-            GitHub Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-            
-            ⬇️ HOW TO VIEW BOOKING DETAILS:
-            1. Click the GitHub Run link above
-            2. Click on "booking-test-report" artifact
-            3. Download the zip file
-            4. Extract and open index.html in your browser
-            5. Expand the test steps to see all booking details
+      - name: Create GitHub Issue - Booking Success
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --repo "${{ github.repository }}" \
+            --title "✅ APPOINTMENT BOOKED! - Запись Test Passed" \
+            --body "$(cat <<'EOF'
+          ✅ SUCCESS - "Запись" Test Passed!
+ 
+          ============================================
+          APPOINTMENT SUCCESSFULLY BOOKED
+          ============================================
+ 
+          Test Name: "Запись"
+          Status: ✅ PASSED
+ 
+          📊 VIEW FULL DETAILS:
+          GitHub Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+ 
+          ⬇️ HOW TO VIEW BOOKING DETAILS:
+          1. Click the GitHub Run link above
+          2. Click on "booking-test-report" artifact
+          3. Download the zip file
+          4. Extract and open index.html in your browser
+          5. Expand the test steps to see all booking details
+          EOF
+          )"
