@@ -211,6 +211,7 @@ jobs:
           gh issue create \
             --repo "${{ github.repository }}" \
             --title "$TITLE" \
+            --assignee "${{ github.repository_owner }}" \
             --body "$(cat <<EOF
  
           ============================================
