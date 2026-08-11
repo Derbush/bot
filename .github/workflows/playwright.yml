@@ -1,35 +1,152 @@
-name: Playwright Tests Every 20 Minutes
-
+name: Visa Appointment Bot - Every 20 Minutes
+ 
 on:
   schedule:
     # Run every 20 minutes
     - cron: '*/20 * * * *'
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
+  # Allow manual trigger
+  workflow_dispatch:
+ 
 jobs:
-  test:
-    timeout-minutes: 60
+  search_dates:
+    timeout-minutes: 120
     runs-on: ubuntu-latest
+    outputs:
+      test_passed: ${{ steps.search.outcome }}
+      dates_found: ${{ steps.capture_dates.outputs.dates }}
+      last_month: ${{ steps.capture_dates.outputs.month }}
+    
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-node@v4
-      with:
-        node-version: lts/*
-    - name: Install dependencies
-      run: npm ci
-    - name: Install Playwright Browsers
-      run: npx playwright install --with-deps
-    - name: Run Playwright tests
-      run: npx playwright test
-      env:
-        VISAWEBSITE: ${{ secrets.VISAWEBSITE }}
-        VISALOGIN: ${{ secrets.VISALOGIN }}
-        VISAPASSWORD: ${{ secrets.VISAPASSWORD }}
-    - uses: actions/upload-artifact@v4
-      if: ${{ !cancelled() }}
-      with:
-        name: playwright-report
-        path: playwright-report/
-        retention-days: 30
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps
+      
+      - name: Run "Поиск мест 2026" test
+        id: search
+        run: npx playwright test --grep "Поиск мест 2026" 2>&1 | tee test-output.txt
+        env:
+          VISAWEBSITE: ${{ secrets.VISAWEBSITE }}
+          VISALOGIN: ${{ secrets.VISALOGIN }}
+          VISAPASSWORD: ${{ secrets.VISAPASSWORD }}
+        continue-on-error: true
+      
+      - name: Capture dates and month from output
+        id: capture_dates
+        if: steps.search.outcome == 'success'
+        run: |
+          # Extract all dates and last month from test output
+          DATES=$(grep -oP '\[\d+\] \K[0-9]+' test-output.txt | tr '\n' ', ' | sed 's/,$//')
+          MONTH=$(grep -oP 'Navigating: \K[A-Za-z]+ \d+' test-output.txt | tail -1)
+          echo "dates=$DATES" >> $GITHUB_OUTPUT
+          echo "month=$MONTH" >> $GITHUB_OUTPUT
+      
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: search-test-report
+          path: playwright-report/
+          retention-days: 7
+ 
+  book_appointment:
+    timeout-minutes: 120
+    needs: search_dates
+    if: needs.search_dates.outputs.test_passed == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      booking_result: ${{ steps.booking.outcome }}
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps
+      
+      - name: Run "Запись" test
+        id: booking
+        run: npx playwright test --grep "Запись" 2>&1 | tee booking-output.txt
+        env:
+          VISAWEBSITE: ${{ secrets.VISAWEBSITE }}
+          VISALOGIN: ${{ secrets.VISALOGIN }}
+          VISAPASSWORD: ${{ secrets.VISAPASSWORD }}
+        continue-on-error: true
+      
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: booking-test-report
+          path: playwright-report/
+          retention-days: 7
+ 
+  send_notifications:
+    runs-on: ubuntu-latest
+    needs: [search_dates, book_appointment]
+    if: ${{ always() && needs.search_dates.outputs.test_passed == 'success' }}
+    
+    steps:
+      - name: Send Success Email - Dates Found
+        if: needs.search_dates.outputs.test_passed == 'success'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "✅ VISA DATES AVAILABLE! - ${{ needs.search_dates.outputs.last_month }}"
+          to: ${{ secrets.EMAIL_TO }}
+          from: "Visa Appointment Bot"
+          body: |
+            🎉 AVAILABLE DATES FOUND! 🎉
+            
+            ============================================
+            Search Test: "Поиск мест 2026" - ✅ SUCCESS
+            ============================================
+            
+            📅 Available Dates Found:
+            ${{ needs.search_dates.outputs.dates_found }}
+            
+            📍 Last Month Checked:
+            ${{ needs.search_dates.outputs.last_month }}
+            
+            ⏱️ Time: $(date)
+            
+            GitHub Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            
+            ============================================
+            Booking Test: "Запись" - ${{ needs.book_appointment.outputs.booking_result == 'success' && '✅ SUCCESS' || '⚠️ RUNNING' }}
+            ============================================
+            
+            Check GitHub Actions for full details and HTML reports.
+ 
+      - name: Send Booking Result Email
+        if: needs.book_appointment.outputs.booking_result != ''
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "📝 BOOKING STATUS - ${{ needs.book_appointment.outputs.booking_result == 'success' && '✅ SUCCESS' || '❌ FAILED' }}"
+          to: ${{ secrets.EMAIL_TO }}
+          from: "Visa Appointment Bot"
+          body: |
+            Booking Test Result: "Запись"
+            
+            Status: ${{ needs.book_appointment.outputs.booking_result == 'success' && '✅ APPOINTMENT BOOKED!' || '❌ Booking failed' }}
+            
+            Check GitHub Actions for full details:
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
