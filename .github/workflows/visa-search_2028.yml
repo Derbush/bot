@@ -1,4 +1,4 @@
-name: Visa Date Search - Every 20 Minutes
+name: Visa Date Search - 2028 Twice a day
  
 on:
   schedule:
