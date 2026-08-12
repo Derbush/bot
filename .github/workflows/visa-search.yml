@@ -3,7 +3,7 @@ name: Visa Date Search - Every 20 Minutes
 on:
   schedule:
     # Runs at :07, :27, :47 every hour
-    - cron: '7,27,47 * * * *'
+    - cron: '3,23,43 * * * *'
  
   # Optional: keep manual Run workflow button
   workflow_dispatch:
@@ -71,7 +71,7 @@ jobs:
       # when the test fails. The job is failed explicitly at
       # the very end instead.
       # ==========================================================
-      - name: Run "Поиск мест 2026" test
+      - name: Run "Поиск мест 2026/2027" test
         id: search
         continue-on-error: true
         shell: bash
@@ -88,7 +88,7 @@ jobs:
           set +e
  
           npx playwright test \
-            --grep "Поиск мест 2026" \
+            --grep "Поиск мест 2026/2027" \
             --retries=0 \
             2>&1 | tee test-output.txt
  
@@ -192,7 +192,7 @@ jobs:
  
           if [ "${{ steps.search.outputs.result }}" = "success" ]; then
  
-            TITLE="🚨 VISA DATES AVAILABLE - Поиск мест 2026"
+            TITLE="🚨 VISA DATES AVAILABLE - Поиск мест 2026/2027"
  
             STATUS="✅ PASSED"
  
@@ -200,7 +200,7 @@ jobs:
  
           else
  
-            TITLE="ℹ️ NO VISA DATES - Поиск мест 2026"
+            TITLE="ℹ️ NO VISA DATES - Поиск мест 2026/2027"
  
             STATUS="ℹ️ NO DATES FOUND"
  
@@ -219,7 +219,7 @@ jobs:
           ============================================
  
           Test:
-          "Поиск мест 2026"
+          "Поиск мест 2026/2027"
  
           Status:
           $STATUS
