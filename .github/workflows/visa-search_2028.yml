@@ -82,7 +82,7 @@ jobs:
         run: |
  
           echo "============================================"
-          echo "VISA DATE SEARCH"
+          echo "2028 DATES"
           echo "============================================"
  
           set +e
@@ -102,7 +102,7 @@ jobs:
  
             echo ""
             echo "============================================"
-            echo "✅ SEARCH TEST PASSED"
+            echo "✅ 20282 SEARCH TEST PASSED"
             echo "============================================"
  
           else
@@ -110,7 +110,7 @@ jobs:
  
             echo ""
             echo "============================================"
-            echo "ℹ️ SEARCH TEST FAILED"
+            echo "ℹ️ 2028 SEARCH TEST FAILED"
             echo "============================================"
  
             echo "No dates were found or the search assertion failed."
@@ -154,7 +154,7 @@ jobs:
         run: |
  
           echo "============================================"
-          echo "COMPLETE SEARCH OUTPUT"
+          echo "2028 COMPLETE SEARCH OUTPUT"
           echo "============================================"
  
           if [ -f test-output.txt ]; then
@@ -192,7 +192,7 @@ jobs:
  
           if [ "${{ steps.search.outputs.result }}" = "success" ]; then
  
-            TITLE="🚨 VISA DATES AVAILABLE - Поиск мест 2028"
+            TITLE="🚨 2028 DATES AVAILABLE"
  
             STATUS="✅ PASSED"
  
