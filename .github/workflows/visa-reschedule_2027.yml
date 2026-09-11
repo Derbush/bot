@@ -191,7 +191,7 @@ jobs:
  
           if [ "${{ steps.search.outputs.result }}" = "success" ]; then
  
-            TITLE="🚨 2027 DATES — ${{ steps.capture_dates.outputs.month }}"
+            TITLE="🚨 ${{ steps.capture_dates.outputs.month }}"
  
             STATUS="✅ PASSED"
  
