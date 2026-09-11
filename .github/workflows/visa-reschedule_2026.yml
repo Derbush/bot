@@ -1,0 +1,281 @@
+name: Dates - 2026 
+
+on:
+  schedule:
+    - cron: '10 11 * * *'   # 7:10 AM Eastern (EDT)
+    - cron: '10 0 * * *'    # 8:10 PM Eastern (EDT)
+ 
+  # Optional: keep manual Run workflow button
+  workflow_dispatch:
+ 
+permissions:
+  contents: read
+  issues: write
+ 
+jobs:
+  search_dates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+ 
+    steps:
+ 
+      # ==========================================================
+      # CHECKOUT
+      # ==========================================================
+      - name: Checkout repository
+        uses: actions/checkout@v4
+ 
+ 
+      # ==========================================================
+      # NODE
+      # ==========================================================
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+ 
+ 
+      # ==========================================================
+      # PLAYWRIGHT CACHE
+      # ==========================================================
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+ 
+ 
+      # ==========================================================
+      # INSTALL DEPENDENCIES
+      # ==========================================================
+      - name: Install dependencies
+        run: npm ci
+ 
+ 
+      # ==========================================================
+      # INSTALL PLAYWRIGHT
+      # ==========================================================
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps
+ 
+ 
+      # ==========================================================
+      # RUN SEARCH TEST
+      #
+      # Exactly ONE execution.
+      # No Playwright retries.
+      # continue-on-error is kept TRUE so the later steps
+      # (report upload, issue creation, email) still run even
+      # when the test fails. The job is failed explicitly at
+      # the very end instead.
+      # ==========================================================
+      - name: Run "2026 Доступные даты перезапись" test
+        id: search
+        continue-on-error: true
+        shell: bash
+        env:
+          VISAWEBSITE: ${{ secrets.VISAWEBSITE }}
+          VISALOGIN: ${{ secrets.VISALOGIN }}
+          VISAPASSWORD: ${{ secrets.VISAPASSWORD }}
+        run: |
+ 
+          echo "============================================"
+          echo "2026 DATES"
+          echo "============================================"
+ 
+          set +e
+ 
+          npx playwright test \
+            --grep "2026 Доступные даты перезапись" \
+            --retries=0 \
+            2>&1 | tee test-output.txt
+ 
+          TEST_RESULT=${PIPESTATUS[0]}
+ 
+          echo ""
+          echo "Playwright exit code: $TEST_RESULT"
+ 
+          if [ "$TEST_RESULT" -eq 0 ]; then
+            echo "result=success" >> "$GITHUB_OUTPUT"
+ 
+            echo ""
+            echo "============================================"
+            echo "✅ 2026 SEARCH TEST PASSED"
+            echo "============================================"
+ 
+          else
+            echo "result=failure" >> "$GITHUB_OUTPUT"
+ 
+            echo ""
+            echo "============================================"
+            echo "ℹ️ 2026 SEARCH TEST FAILED"
+            echo "============================================"
+ 
+            echo "No dates were found or the search assertion failed."
+          fi
+ 
+ 
+      # ==========================================================
+      # CAPTURE LAST MONTH
+      # ==========================================================
+      - name: Capture dates and month
+        id: capture_dates
+        if: always()
+        shell: bash
+        run: |
+ 
+          if [ -f test-output.txt ]; then
+ 
+            MONTH=$(grep "Navigating:" test-output.txt | tail -1 || true)
+ 
+            if [ -z "$MONTH" ]; then
+              MONTH="unknown"
+            fi
+ 
+          else
+            MONTH="unknown"
+          fi
+ 
+          echo "month=$MONTH" >> "$GITHUB_OUTPUT"
+ 
+          echo ""
+          echo "Last navigation:"
+          echo "$MONTH"
+ 
+ 
+      # ==========================================================
+      # PRINT COMPLETE OUTPUT
+      # ==========================================================
+      - name: Display complete search output
+        if: always()
+        shell: bash
+        run: |
+ 
+          echo "============================================"
+          echo "2026 COMPLETE SEARCH OUTPUT"
+          echo "============================================"
+ 
+          if [ -f test-output.txt ]; then
+            cat test-output.txt
+          fi
+ 
+ 
+      # ==========================================================
+      # UPLOAD SEARCH REPORT
+      #
+      # This report belongs ONLY to this search run.
+      # ==========================================================
+      - name: Upload search test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: search-test-report-${{ github.run_number }}
+          path: |
+            playwright-report/
+            test-output.txt
+            test-results/
+          if-no-files-found: warn
+          retention-days: 7
+ 
+ 
+      # ==========================================================
+      # CREATE ISSUE WITH RESULT
+      # ==========================================================
+      - name: Create search result issue
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+ 
+          if [ "${{ steps.search.outputs.result }}" = "success" ]; then
+ 
+            TITLE="🚨 2026 DATES AVAILABLE"
+ 
+            STATUS="✅ PASSED"
+ 
+            MESSAGE="Visa dates were found."
+ 
+          else
+ 
+            TITLE="ℹ️ NO DATES - 2026"
+ 
+            STATUS="ℹ️ NO DATES FOUND"
+ 
+            MESSAGE="The search test did not find available dates."
+ 
+          fi
+ 
+          gh issue create \
+            --repo "${{ github.repository }}" \
+            --title "$TITLE" \
+            --assignee "${{ github.repository_owner }}" \
+            --body "$(cat <<EOF
+ 
+          ============================================
+          VISA DATE SEARCH RESULT
+          ============================================
+ 
+          Test:
+          "2026 Доступные даты перезапись"
+ 
+          Status:
+          $STATUS
+ 
+          Result:
+          $MESSAGE
+ 
+          Last Month Checked:
+          ${{ steps.capture_dates.outputs.month }}
+ 
+          ============================================
+          GITHUB ACTION RUN
+          ============================================
+ 
+          ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+ 
+          ============================================
+          REPORT
+          ============================================
+ 
+          Artifact:
+          search-test-report-${{ github.run_number }}
+ 
+          Download the artifact from this GitHub Actions run
+          to view the complete Playwright report and output.
+ 
+          ============================================
+          RUN INFORMATION
+          ============================================
+ 
+          Run Number:
+          ${{ github.run_number }}
+ 
+          Run ID:
+          ${{ github.run_id }}
+ 
+          EOF
+          )"
+ 
+ 
+      # ==========================================================
+      # FAIL THE BUILD IF THE TEST FAILED
+      #
+      # "No dates found" is a normal outcome and should NOT fail
+      # the build. An actual test/assertion failure (site down,
+      # login broken, selector changed, etc.) SHOULD fail the
+      # build so you get a red X and know something is broken.
+      #
+      # If you want "no dates found" to also be treated as a
+      # failure, change the condition below to simply check
+      # steps.search.outputs.result != 'success'.
+      # ==========================================================
+      - name: Fail build if test errored
+        if: steps.search.outcome == 'failure'
+        shell: bash
+        run: |
+          echo "The Playwright test step failed (not just 'no dates found')."
+          echo "Failing the build so this is visible in the Actions tab."
+          exit 1
