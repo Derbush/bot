@@ -29,13 +29,20 @@ test("2026 Доступные даты перезапись", async ({ page }) =
   await page.locator("//input[@data-disable-with='Войти']").click();
 
   await page.locator("//a[.='Продолжить']").click();
-  await page
-    .locator("//span[@class='fas fa-calendar-minus fa-lg fa-fw']/../..")
-    .click();
 
-await page.getByRole("link", { name: "Перенести запись" }).click();
+  await page.waitForTimeout(300);
 
-await page.locator("//div[contains(@class, 'icheckbox icheck-item')]").click();
+  await page.locator("//span[@class='fas fa-calendar-minus fa-lg fa-fw']/../..").click();
+
+  await page.waitForTimeout(300);
+
+ // await page.locator("//h5[contains(normalize-space(), 'Перенести запись')]/../../a").click();
+
+  await page.locator("//div[@class='accordion-content']//a[contains(normalize-space(), 'Перенести запись')]").click();
+
+
+
+  await page.locator("//div[contains(@class, 'icheckbox icheck-item')]").click();
 
   await page.locator("//input[@data-disable-with='Continue']").click();
 
@@ -136,11 +143,17 @@ test("2027 Доступные даты перезапись", async ({ page }) =
   await page.locator("//input[@data-disable-with='Войти']").click();
 
 await page.locator("//a[.='Продолжить']").click();
-  await page
-    .locator("//span[@class='fas fa-calendar-minus fa-lg fa-fw']/../..")
-    .click();
 
-  await page.getByRole("link", { name: "Перенести запись" }).click();
+   await page.waitForTimeout(300);
+
+  await page.locator("//span[@class='fas fa-calendar-minus fa-lg fa-fw']/../..").click();
+
+  await page.waitForTimeout(300);
+
+ // await page.locator("//h5[contains(normalize-space(), 'Перенести запись')]/../../a").click();
+
+  await page.locator("//div[@class='accordion-content']//a[contains(normalize-space(), 'Перенести запись')]").click();
+
 
   await page
     .locator("//div[contains(@class, 'icheckbox icheck-item')]")
@@ -156,10 +169,7 @@ await page.locator("//a[.='Продолжить']").click();
     .locator("#appointments_consulate_appointment_facility_id")
     .type("As");
 
-  //await page.waitForTimeout(500);
   await page.keyboard.press("Enter");
-
-  //await page.waitForTimeout(2000);
 
   await page.locator("//input[@placeholder='Date']").click();
 
@@ -214,7 +224,7 @@ while (!availableDateFound && attempts < maxAttempts) {
 
     // Click next button
     await page.locator("a.ui-datepicker-next").click();
-    await page.waitForTimeout(150);
+    await page.waitForTimeout(300);
     attempts++;
   }
 
